@@ -271,7 +271,8 @@ export const Terminal = (props: TerminalProps) => {
         url.username = "opencode"
         url.password = window.__OPENCODE__?.serverPassword
       }
-      const socket = new WebSocket(url)
+      const WS = platform.WebSocket ?? WebSocket
+      const socket = new WS(url)
       socket.binaryType = "arraybuffer"
       cleanups.push(() => {
         if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) socket.close()

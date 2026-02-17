@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -59,6 +60,8 @@ const withCategory = (category: string) => {
 }
 
 export const useSessionCommands = (input: SessionCommandContext) => {
+  const platform = usePlatform()
+  const terminalEnabled = createMemo(() => platform.runtime !== "vscode")
   const sessionCommand = withCategory(input.language.t("command.category.session"))
   const fileCommand = withCategory(input.language.t("command.category.file"))
   const contextCommand = withCategory(input.language.t("command.category.context"))
@@ -133,13 +136,17 @@ export const useSessionCommands = (input: SessionCommandContext) => {
   ])
 
   const viewCommands = createMemo(() => [
-    viewCommand({
-      id: "terminal.toggle",
-      title: input.language.t("command.terminal.toggle"),
-      keybind: "ctrl+`",
-      slash: "terminal",
-      onSelect: () => input.view().terminal.toggle(),
-    }),
+    ...(terminalEnabled()
+      ? [
+          viewCommand({
+            id: "terminal.toggle",
+            title: input.language.t("command.terminal.toggle"),
+            keybind: "ctrl+`",
+            slash: "terminal",
+            onSelect: () => input.view().terminal.toggle(),
+          }),
+        ]
+      : []),
     viewCommand({
       id: "review.toggle",
       title: input.language.t("command.review.toggle"),
@@ -158,16 +165,20 @@ export const useSessionCommands = (input: SessionCommandContext) => {
       keybind: "ctrl+l",
       onSelect: () => input.focusInput(),
     }),
-    terminalCommand({
-      id: "terminal.new",
-      title: input.language.t("command.terminal.new"),
-      description: input.language.t("command.terminal.new.description"),
-      keybind: "ctrl+alt+t",
-      onSelect: () => {
-        if (input.terminal.all().length > 0) input.terminal.new()
-        input.view().terminal.open()
-      },
-    }),
+    ...(terminalEnabled()
+      ? [
+          terminalCommand({
+            id: "terminal.new",
+            title: input.language.t("command.terminal.new"),
+            description: input.language.t("command.terminal.new.description"),
+            keybind: "ctrl+alt+t",
+            onSelect: () => {
+              if (input.terminal.all().length > 0) input.terminal.new()
+              input.view().terminal.open()
+            },
+          }),
+        ]
+      : []),
     viewCommand({
       id: "steps.toggle",
       title: input.language.t("command.steps.toggle"),

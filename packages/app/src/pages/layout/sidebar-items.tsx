@@ -3,6 +3,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject, getAvatarColors } from "@/context/layout"
 import { useNotification } from "@/context/notification"
+import { usePlatform } from "@/context/platform"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -14,12 +15,24 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/util/path"
 import { type Message, type Session, type TextPart, type UserMessage } from "@opencode-ai/sdk/v2/client"
-import { For, Match, Show, Switch, createMemo, onCleanup, type Accessor, type JSX } from "solid-js"
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { agentColor } from "@/utils/agent"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element => {
+  const platform = usePlatform()
   const notification = useNotification()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
   const unseenCount = createMemo(() =>
@@ -27,14 +40,64 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   )
   const hasError = createMemo(() => dirs().some((directory) => notification.project.unseenHasError(directory)))
   const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
+  const src = createMemo(() => {
+    if (props.project.id === OPENCODE_PROJECT_ID) return "https://opencode.ai/favicon.svg"
+    const override = props.project.icon?.override?.trim()
+    if (
+      override &&
+      (override.startsWith("data:") || override.startsWith("https://") || override.startsWith("http://"))
+    ) {
+      return override
+    }
+    return props.project.icon?.url
+  })
+  const [resolvedSrc, setResolvedSrc] = createSignal<string | undefined>()
+
+  const toDataUrl = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result === "string") {
+          resolve(result)
+          return
+        }
+        reject(new Error("failed to read image"))
+      }
+      reader.onerror = () => reject(reader.error ?? new Error("failed to read image"))
+      reader.readAsDataURL(blob)
+    })
+
+  createEffect(() => {
+    const value = src()
+    if (!value) {
+      setResolvedSrc(undefined)
+      return
+    }
+    if (platform.runtime !== "vscode" || !platform.fetch || value.startsWith("data:")) {
+      setResolvedSrc(value)
+      return
+    }
+
+    const abort = new AbortController()
+    platform
+      .fetch(value, { signal: abort.signal })
+      .then((response) => {
+        if (response.ok) return response.blob()
+        throw new Error(`icon fetch failed: ${response.status}`)
+      })
+      .then(toDataUrl)
+      .then((next) => setResolvedSrc(next))
+      .catch(() => setResolvedSrc(value))
+
+    onCleanup(() => abort.abort())
+  })
   return (
     <div class={`relative size-8 shrink-0 rounded ${props.class ?? ""}`}>
       <div class="size-full rounded overflow-clip">
         <Avatar
           fallback={name()}
-          src={
-            props.project.id === OPENCODE_PROJECT_ID ? "https://opencode.ai/favicon.svg" : props.project.icon?.override
-          }
+          src={resolvedSrc()}
           {...getAvatarColors(props.project.icon?.color)}
           class="size-full rounded"
           classList={{ "badge-mask": unseenCount() > 0 && props.notify }}

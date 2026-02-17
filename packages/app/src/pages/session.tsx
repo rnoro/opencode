@@ -36,7 +36,9 @@ import { usePrompt } from "@/context/prompt"
 import { useComments } from "@/context/comments"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { showToast } from "@opencode-ai/ui/toast"
+import { getVscodeApi } from "@/lib/vscode-fetch"
 import { SessionHeader, SessionContextTab, SortableTab, FileVisual, NewSessionView } from "@/components/session"
 import { navMark, navParams } from "@/utils/perf"
 import { same } from "@/utils/same"
@@ -102,6 +104,7 @@ export default function Page() {
   const prompt = usePrompt()
   const comments = useComments()
   const permission = usePermission()
+  const platform = usePlatform()
 
   const permRequest = createMemo(() => {
     const sessionID = params.id
@@ -233,6 +236,7 @@ export default function Page() {
   }
 
   const isDesktop = createMediaQuery("(min-width: 1024px)")
+  const terminalEnabled = createMemo(() => platform.runtime !== "vscode")
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
@@ -301,11 +305,24 @@ export default function Page() {
   })
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
-  const diffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
-  const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
-  const hasReview = createMemo(() => reviewCount() > 0)
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const sessionDiffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
+  const inferredDiffs = createMemo(() => {
+    const list = messages().flatMap((message) => {
+      if (message.role !== "user") return []
+      if (!message.summary || typeof message.summary !== "object") return []
+      return message.summary.diffs ?? []
+    })
+    return list.filter((diff, index) => list.findLastIndex((item) => item.file === diff.file) === index)
+  })
+  const diffs = createMemo(() => {
+    const direct = sessionDiffs()
+    if (direct.length > 0) return direct
+    return inferredDiffs()
+  })
+  const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
+  const hasReview = createMemo(() => reviewCount() > 0)
   const messagesReady = createMemo(() => {
     const id = params.id
     if (!id) return true
@@ -647,7 +664,8 @@ export default function Page() {
     const id = params.id
     if (!id) return true
     if (!hasReview()) return true
-    return sync.data.session_diff[id] !== undefined
+    if (sync.data.session_diff[id] !== undefined) return true
+    return inferredDiffs().length > 0
   })
 
   const idle = { type: "idle" as const }
@@ -679,6 +697,13 @@ export default function Page() {
   })
 
   createEffect(() => {
+    if (terminalEnabled()) return
+    if (view().terminal.opened()) view().terminal.close()
+    setUi("autoCreated", false)
+  })
+
+  createEffect(() => {
+    if (!terminalEnabled()) return
     if (!view().terminal.opened()) {
       setUi("autoCreated", false)
       return
@@ -692,6 +717,7 @@ export default function Page() {
     on(
       () => terminal.all().length,
       (count, prevCount) => {
+        if (!terminalEnabled()) return
         if (prevCount !== undefined && prevCount > 0 && count === 0) {
           if (view().terminal.opened()) {
             view().terminal.toggle()
@@ -705,6 +731,7 @@ export default function Page() {
     on(
       () => terminal.active(),
       (activeId) => {
+        if (!terminalEnabled()) return
         if (!activeId || !view().terminal.opened()) return
         // Immediately remove focus
         if (document.activeElement instanceof HTMLElement) {
@@ -814,7 +841,7 @@ export default function Page() {
     }
 
     // Don't autofocus chat if terminal panel is open
-    if (view().terminal.opened()) return
+    if (terminalEnabled() && view().terminal.opened()) return
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
     if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
@@ -940,12 +967,23 @@ export default function Page() {
     focusInput,
   })
 
-  const openReviewFile = createOpenReviewFile({
+  const baseOpenReviewFile = createOpenReviewFile({
     showAllFiles,
     tabForPath: file.tab,
     openTab: tabs().open,
     loadFile: file.load,
   })
+  const openReviewFile = (path: string) => {
+    if (platform.runtime === "vscode" && params.id) {
+      getVscodeApi().postMessage({
+        type: "open-session-diff",
+        sessionID: params.id,
+        file: path,
+      })
+      return
+    }
+    baseOpenReviewFile(path)
+  }
 
   const changesOptions = ["session", "turn"] as const
   const changesOptionsList = [...changesOptions]
@@ -971,6 +1009,24 @@ export default function Page() {
     </div>
   )
 
+  const openSessionDiff = (file?: string) => {
+    if (platform.runtime !== "vscode") return
+    if (!params.id) return
+    getVscodeApi().postMessage({
+      type: "open-session-diff",
+      sessionID: params.id,
+      file,
+    })
+  }
+
+  const reviewActions = () => (
+    <Show when={platform.runtime === "vscode" && !!params.id}>
+      <Button size="normal" onClick={() => openSessionDiff(tree.activeDiff)}>
+        Open in VS Code
+      </Button>
+    </Show>
+  )
+
   const reviewContent = (input: {
     diffStyle: DiffStyle
     onDiffStyleChange?: (style: DiffStyle) => void
@@ -982,6 +1038,7 @@ export default function Page() {
       <Match when={store.changes === "turn" && !!params.id}>
         <SessionReviewTab
           title={changesTitle()}
+          actions={reviewActions()}
           empty={emptyTurn()}
           diffs={reviewDiffs}
           view={view}
@@ -1004,6 +1061,7 @@ export default function Page() {
         >
           <SessionReviewTab
             title={changesTitle()}
+            actions={reviewActions()}
             diffs={reviewDiffs}
             view={view}
             diffStyle={input.diffStyle}
@@ -1022,6 +1080,7 @@ export default function Page() {
       <Match when={true}>
         <SessionReviewTab
           title={changesTitle()}
+          actions={reviewActions()}
           empty={
             store.changes === "turn" ? (
               emptyTurn()
@@ -1232,13 +1291,8 @@ export default function Page() {
   createEffect(() => {
     const id = params.id
     if (!id) return
-
-    const wants = isDesktop()
-      ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")
-      : store.mobileTab === "changes"
-    if (!wants) return
-    if (sync.data.session_diff[id] !== undefined) return
     if (sync.status === "loading") return
+    if (sync.data.session_diff[id] !== undefined) return
 
     void sync.session.diff(id)
   })
@@ -1758,7 +1812,7 @@ export default function Page() {
       </div>
 
       <TerminalPanel
-        open={isDesktop() && view().terminal.opened()}
+        open={terminalEnabled() && isDesktop() && view().terminal.opened()}
         height={layout.terminal.height()}
         resize={layout.terminal.resize}
         close={view().terminal.close}

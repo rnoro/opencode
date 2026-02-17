@@ -12,6 +12,7 @@ export type DiffStyle = "unified" | "split"
 export interface SessionReviewTabProps {
   title?: JSX.Element
   empty?: JSX.Element
+  actions?: JSX.Element
   diffs: () => FileDiff[]
   view: () => ReturnType<ReturnType<typeof useLayout>["view"]>
   diffStyle: DiffStyle
@@ -147,6 +148,7 @@ export function SessionReviewTab(props: SessionReviewTabProps) {
         header: props.classes?.header ?? "px-6",
         container: props.classes?.container ?? "px-6",
       }}
+      actions={props.actions}
       diffs={props.diffs()}
       diffStyle={props.diffStyle}
       onDiffStyleChange={props.onDiffStyleChange}

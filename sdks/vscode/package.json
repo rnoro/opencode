@@ -17,10 +17,16 @@
   "engines": {
     "vscode": "^1.94.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:opencode.sidebar.secondary"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -45,10 +51,51 @@
         "title": "Add Filepath to Terminal"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode-sidebar-primary",
+          "title": "opencode",
+          "icon": "images/icon.png"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "opencode-sidebar-secondary",
+          "title": "opencode",
+          "icon": "images/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "opencode-sidebar-primary": [
+        {
+          "type": "webview",
+          "id": "opencode.sidebar.primary",
+          "name": "opencode",
+          "when": "!opencode.secondarySidebarSupported"
+        }
+      ],
+      "opencode-sidebar-secondary": [
+        {
+          "type": "webview",
+          "id": "opencode.sidebar.secondary",
+          "name": "opencode",
+          "when": "opencode.secondarySidebarSupported"
+        }
+      ]
+    },
     "menus": {
       "editor/title": [
         {
           "command": "opencode.openNewTerminal",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "opencode.openTerminal",
+          "when": "view == opencode.sidebar.primary || view == opencode.sidebar.secondary",
           "group": "navigation"
         }
       ]
@@ -81,7 +128,8 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "bun run package",
+    "build:webview": "cd ../../packages/app && bun run build:vscode",
+    "vscode:prepublish": "bun run build:webview && bun run package",
     "compile": "bun run check-types && bun run lint && node esbuild.js",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
@@ -93,7 +141,11 @@
     "lint": "eslint src",
     "test": "vscode-test"
   },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
+    "@types/ws": "^8.5.13",
     "@types/vscode": "^1.94.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
