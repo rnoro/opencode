@@ -13,6 +13,8 @@ export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
 
+  runtime?: "browser" | "vscode"
+
   /** Desktop OS (Tauri only) */
   os?: "macos" | "windows" | "linux"
 
@@ -57,6 +59,9 @@ export type Platform = {
 
   /** Fetch override */
   fetch?: typeof fetch
+
+  /** WebSocket constructor override (for VS Code webview) */
+  WebSocket?: typeof WebSocket
 
   /** Get the configured default server URL (platform-specific) */
   getDefaultServer?(): Promise<ServerConnection.Key | null>

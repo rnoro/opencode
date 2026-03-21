@@ -1,4 +1,5 @@
 import type { Message, Session, TextPart, UserMessage } from "@opencode-ai/sdk/v2/client"
+import { A, useNavigate, useParams } from "@solidjs/router"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { HoverCard } from "@opencode-ai/ui/hover-card"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -8,13 +9,24 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
-import { A, useNavigate, useParams } from "@solidjs/router"
-import { type Accessor, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+} from "solid-js"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { hasProjectPermissions } from "./helpers"
@@ -23,6 +35,7 @@ const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element => {
   const globalSync = useGlobalSync()
+  const platform = usePlatform()
   const notification = useNotification()
   const permission = usePermission()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
@@ -38,14 +51,64 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   )
   const notify = createMemo(() => props.notify && (hasPermissions() || unseenCount() > 0))
   const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
+  const src = createMemo(() => {
+    if (props.project.id === OPENCODE_PROJECT_ID) return "https://opencode.ai/favicon.svg"
+    const override = props.project.icon?.override?.trim()
+    if (
+      override &&
+      (override.startsWith("data:") || override.startsWith("https://") || override.startsWith("http://"))
+    ) {
+      return override
+    }
+    return props.project.icon?.url
+  })
+  const [resolvedSrc, setResolvedSrc] = createSignal<string | undefined>()
+
+  const toDataUrl = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result === "string") {
+          resolve(result)
+          return
+        }
+        reject(new Error("failed to read image"))
+      }
+      reader.onerror = () => reject(reader.error ?? new Error("failed to read image"))
+      reader.readAsDataURL(blob)
+    })
+
+  createEffect(() => {
+    const value = src()
+    if (!value) {
+      setResolvedSrc(undefined)
+      return
+    }
+    if (platform.runtime !== "vscode" || !platform.fetch || value.startsWith("data:")) {
+      setResolvedSrc(value)
+      return
+    }
+
+    const abort = new AbortController()
+    platform
+      .fetch(value, { signal: abort.signal })
+      .then((response) => {
+        if (response.ok) return response.blob()
+        throw new Error(`icon fetch failed: ${response.status}`)
+      })
+      .then(toDataUrl)
+      .then((next) => setResolvedSrc(next))
+      .catch(() => setResolvedSrc(value))
+
+    onCleanup(() => abort.abort())
+  })
   return (
     <div class={`relative size-8 shrink-0 rounded ${props.class ?? ""}`}>
       <div class="size-full rounded overflow-clip">
         <Avatar
           fallback={name()}
-          src={
-            props.project.id === OPENCODE_PROJECT_ID ? "https://opencode.ai/favicon.svg" : props.project.icon?.override
-          }
+          src={resolvedSrc()}
           {...getAvatarColors(props.project.icon?.color)}
           class="size-full rounded"
           classList={{ "badge-mask": notify() }}

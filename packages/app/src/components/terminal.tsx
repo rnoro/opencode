@@ -354,7 +354,6 @@ export const Terminal = (props: TerminalProps) => {
 
       const mod = loaded.mod
       const g = loaded.ghostty
-
       const t = new mod.Terminal({
         cursorBlink: true,
         cursorStyle: "bar",

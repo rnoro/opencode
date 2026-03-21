@@ -3,12 +3,8 @@ const esbuild = require("esbuild")
 const production = process.argv.includes("--production")
 const watch = process.argv.includes("--watch")
 
-/**
- * @type {import('esbuild').Plugin}
- */
 const esbuildProblemMatcherPlugin = {
   name: "esbuild-problem-matcher",
-
   setup(build) {
     build.onStart(() => {
       console.log("[watch] build started")
@@ -35,20 +31,19 @@ async function main() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
-    plugins: [
-      /* add to the end of plugins array */
-      esbuildProblemMatcherPlugin,
-    ],
+    plugins: [esbuildProblemMatcherPlugin],
   })
+
   if (watch) {
     await ctx.watch()
-  } else {
-    await ctx.rebuild()
-    await ctx.dispose()
+    return
   }
+
+  await ctx.rebuild()
+  await ctx.dispose()
 }
 
-main().catch((e) => {
-  console.error(e)
+main().catch((error) => {
+  console.error(error)
   process.exit(1)
 })

@@ -1,5 +1,6 @@
 import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/context/command"
+import { createMemo } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
@@ -7,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -50,6 +52,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const layout = useLayout()
   const navigate = useNavigate()
   const { params, tabs, view } = useSessionLayout()
+  const platform = usePlatform()
+  const terminalEnabled = createMemo(() => platform.runtime !== "vscode")
 
   const info = () => {
     const id = params.id
@@ -294,13 +298,17 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           addSelectionToContext(path, selectionFromLines(range))
         },
       }),
-      viewCommand({
-        id: "terminal.toggle",
-        title: language.t("command.terminal.toggle"),
-        keybind: "ctrl+`",
-        slash: "terminal",
-        onSelect: () => view().terminal.toggle(),
-      }),
+      ...(terminalEnabled()
+        ? [
+            viewCommand({
+              id: "terminal.toggle",
+              title: language.t("command.terminal.toggle"),
+              keybind: "ctrl+`",
+              slash: "terminal",
+              onSelect: () => view().terminal.toggle(),
+            }),
+          ]
+        : []),
       viewCommand({
         id: "review.toggle",
         title: language.t("command.review.toggle"),
@@ -319,16 +327,20 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keybind: "ctrl+l",
         onSelect: focusInput,
       }),
-      terminalCommand({
-        id: "terminal.new",
-        title: language.t("command.terminal.new"),
-        description: language.t("command.terminal.new.description"),
-        keybind: "ctrl+alt+t",
-        onSelect: () => {
-          if (terminal.all().length > 0) terminal.new()
-          view().terminal.open()
-        },
-      }),
+      ...(terminalEnabled()
+        ? [
+            terminalCommand({
+              id: "terminal.new",
+              title: language.t("command.terminal.new"),
+              description: language.t("command.terminal.new.description"),
+              keybind: "ctrl+alt+t",
+              onSelect: () => {
+                if (terminal.all().length > 0) terminal.new()
+                view().terminal.open()
+              },
+            }),
+          ]
+        : []),
       sessionCommand({
         id: "message.previous",
         title: language.t("command.message.previous"),

@@ -42,6 +42,7 @@ import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
+import { NewSessionView } from "@/components/session"
 import DirectoryLayout from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
@@ -57,7 +58,11 @@ const SessionRoute = () => (
   </SessionProviders>
 )
 
-const SessionIndexRoute = () => <Navigate href="session" />
+const SessionIndexRoute = () => (
+  <SessionProviders>
+    <NewSessionView worktree="main" />
+  </SessionProviders>
+)
 
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
@@ -160,7 +165,9 @@ export function AppBaseProviders(props: ParentProps) {
 const effectMinDuration =
   (duration: Duration.Input) =>
   <A, E, R>(e: Effect.Effect<A, E, R>) =>
-    Effect.all([e, Effect.sleep(duration)], { concurrency: "unbounded" }).pipe(Effect.map((v) => v[0]))
+    Effect.all([e, Effect.sleep(duration)], { concurrency: "unbounded" }).pipe(
+      Effect.map((pair: readonly [A, unknown]) => pair[0]),
+    )
 
 function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const server = useServer()
